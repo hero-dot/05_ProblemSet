@@ -4,7 +4,7 @@ library(ggplot2)
 
 trainDataAll <- read.csv("basketball_train.csv", sep = ";")
 
-trainData <- head(trainData,16000)
+trainData <- head(trainDataAll,16000)
 
 #a
 #
