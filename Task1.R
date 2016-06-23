@@ -1,5 +1,6 @@
 library(magrittr)
 library(dplyr)
+library(ggplot2)
 
 trainDataAll <- read.csv("basketball_train.csv", sep = ";")
 
@@ -48,5 +49,8 @@ trainData %>%
   (count(Season3PointNM)/count(Season3Point)) -> #69,57 Playoffs 3-Points Not Made
     
 
-
+    trainData %>%
+    select(shot_made_flag,loc_x, loc_y)%>%
+    ggplot(.,aes(x=loc_x, y=loc_y))+
+    geom_point(aes(color = shot_made_flag))
  
