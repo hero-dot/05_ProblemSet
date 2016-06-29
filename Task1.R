@@ -1,7 +1,7 @@
-library(magrittr)
-library(dplyr)
-library(ggplot2)
-
+require(magrittr)
+require(dplyr)
+require(ggplot2)
+require(class)
 trainDataAll <- read.csv("basketball_train.csv", sep = ";")
 
 trainData <- head(trainDataAll,16000)
@@ -79,7 +79,9 @@ trainDataAll%>%
   scale_size_area()-> Graph
 Graph
 
-#____________Breaking_into_minutes
+#____________Breaking_seconds_into_intervals_______
+
+# Alternatively create a variable with total seconds remaining 
 
 trainDataAll%>%
   select(period,minutes_remaining,seconds_remaining,shot_made_flag)%>%
@@ -97,17 +99,62 @@ trainDataAll%>%
 # use varying values of k
 
 trainDataAll%>%
-  select(loc_y,loc_x,period,minutes_remaining,seconds_remaining,shot_made_flag) -> trainData
+  select(loc_y,loc_x,period,minutes_remaining,seconds_remaining,shot_made_flag)%>%
+  mutate(bin_sec15 = round((seconds_remaining+8)/15),bin_sec30 = round((seconds_remaining+16)/30)) -> trainData
+
+trainData$loc_y = scale(trainData$loc_y)
+trainData$loc_x = scale(trainData$loc_x)
+trainData$minutes_remaining = scale(trainData$minutes_remaining)
+trainData$seconds_remaining = scale(trainData$seconds_remaining)
+trainData$shot_made_flag = as.factor(trainData$shot_made_flag)
 
 train = trainData[1:16000,]
-test = trainData[16001:length(trainDataAll),]
+test = trainData[16001:nrow(trainDataAll),]
+
+# Train the kNN Model solely with the location as predictor
+train_1 = select(train,-period,-minutes_remaining,-seconds_remaining,-shot_made_flag)
+test_1  = select(test,-period,-minutes_remaining,-seconds_remaining,-shot_made_flag)
+
+for (k in 1:40) 
+{
+  summary(knn(train_1,test_1,train_1$shot_made_flag, k))
+}
+
+# Train the model with all variables
 
 data = NULL
-for (k in 1:40){
+for (k in 1:45){
   data = c(data,sum(knn(select(train,-shot_made_flag),select(test,-shot_made_flag),train$shot_made_flag, k)!=test$shot_made_flag))
 }
 
 ts.plot(data,xlab="k",ylab="# misclassifications")
 
-table(trainDataAll$shot_made_flag)[[1]]
-table(trainDataAll$shot_made_flag)[[2]]
+# Experimenting with different scaling of the remaining time 
+# Why is this crucial for the kNN classifier? 
+
+train_3 = select(train,-seconds_remaining,-bin_sec30,-shot_made_flag)
+test_3 = select(test,-seconds_remaining,-bin_sec30,-shot_made_flag)
+
+data = NULL
+for (k in 1:50){
+  data = c(data,sum(knn(train_3,test_3,train$shot_made_flag, k)!=test$shot_made_flag))
+}
+
+ts.plot(data,xlab="k",ylab="# misclassifications")
+
+#Alternatively with bin_sec15
+
+# c Logistic regression
+# Train and compare at least 5 different logistic regression model
+
+# Coordinates converted to polar coordinates
+# Attacking from the left or from the right of the basket
+# Crunch time (remaining Time < X)
+# Aging Curve 
+# One more Model
+
+# pick the most promising model
+
+# d Train a random forest model 
+
+# e 
