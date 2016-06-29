@@ -109,7 +109,17 @@ prediction = predict(caret.rf,testMatrix)
 confusionMatrix(prediction,testing$Survived)
 plot(caret.rf)
 
-
 # Provide a table akin to table 1
+getTrainPerf(caret.kNN)
+getTrainPerf(caret.logReg)
+getTrainPerf(caret.ctree)
+getTrainPerf(caret.rf)
 
 # b. 
+
+# Explain the Sorting Smoothing Method
+
+# Develop the graphs and apply to your classifiers
+
+# How would you assess the performance of you random forest 
+# vis a vis the methods in the paper
