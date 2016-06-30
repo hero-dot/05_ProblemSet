@@ -4,7 +4,6 @@ library(doParallel)
 library(pROC)
 library(ROCR)
 # install.packages("ROCR")
-library(dplyr)
 
 bankData <- read.csv("bank.csv",sep = ";")
 summary(bankData)
