@@ -210,43 +210,124 @@ cartToPolar <- function(x,y)
   theta = ifelse(is.nan(theta),0,theta)
   polarCoord = paste(as.character(theta),".",as.character(r))
   polarCoord = as.factor(gsub(" ","",polarCoord))
-  return(polarCoord)
+  return(c(r,theta))
 }
 
+polarDist <- function(x,y)
+{
+  r = round(sqrt(x^2+y^2))
+  return(r)
+}
+
+polarAngl <- function(x,y)
+{
+  theta = round(rad2deg(atan2(y,x)))
+  theta = ifelse(is.nan(theta),0,theta)
+  return(theta)
+}
 trainData%>%
-  mutate(polarCoord = cartToPolar(loc_x,loc_y))-> trainData
+  mutate(polarDista = polarDist(loc_x,loc_y), polarAngle = polarAngl(loc_x,loc_y))-> trainData
 
 training = trainData[1:16000,]
 testing = trainData[16001:nrow(trainData),]
 
 cl <- makeCluster(detectCores())
 registerDoParallel(cl)
-logReg.polar <- train(shot_made_flag~polarCoord,
+logReg.polarDista <- train(shot_made_flag~polarDista,
                       data = training,
                       method = "glm",
                       family = "binomial")
 stopCluster(cl)
 
-logReg.polar = glm(shot_made_flag~polarCoord,data = training,family = "binomial")
-plot(trainData$period,trainData$shot_made_flag, col = "blue", pch="|")
-curve(predict(logReg, data.frame(period=x), type="response"), add=TRUE) 
+plot(trainData$polarDista,trainData$shot_made_flag, col = "blue", pch="|")
+curve(predict(logReg.polarDista$finalModel,data.frame(polarDista=x), type="response"), add=TRUE) 
 
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.polarangl <- train(shot_made_flag~polarAngle,
+                      data = training,
+                      method = "glm",
+                      family = "binomial")
+stopCluster(cl)
+logReg.polarangl$finalModel
 
-# Convert data to factors 
+plot(trainData$polarAngle,trainData$shot_made_flag, col = "blue", pch="|")
+curve(predict(logReg.polarangl$finalModel,data.frame(polarAngle=x), type="response"), add=TRUE) 
 
-# Create X Matrix
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.polar <- train(shot_made_flag~polarAngle+polarDista,
+                  data = training,
+                  method = "glm",
+                  family = "binomial")
+stopCluster(cl)
 
-# Set up Train Control
-
+logReg.polar$finalModel
 
 # Attacking from the left or from the right of the basket
+# What angles are on the left and what angles are on the right
+angles = NULL
+for (y in -2:2) 
+{
+  for (x in -2:2) 
+    {
+    angle = round(rad2deg(atan2(y,x)))
+    angle = cbind(y,x,angle)
+    angles= rbind(angles,angle)
+    }
+}
+# The "left attack-angles" are from 180 to 90 in the positive range and -90 to -180
+# The "right attack-angles" are from 0 to 90 and from 0 to -90 
+
+trainData%>%
+  mutate(attack= as.factor(ifelse((.$polarAngle >90 &.$polarAngle < 180)|(.$polarAngle <(-90)),"l","r"))) -> trainData
+training = trainData[1:16000,]
+testing = trainData[16001:nrow(trainData),]
+
+plot(trainData$attack,trainData$shot_made_flag, col = "blue", pch="|")
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.polarAttack <- train(shot_made_flag~attack+polarDista,
+                      data = training,
+                      method = "glm",
+                      family = "binomial")
+stopCluster(cl)
+
+logReg.polarAttack$finalModel
 
 # Crunch time (remaining Time < X)last few minutes in the fourth quarter
+trainData%>%
+  mutate(crunchTime = ifelse(period == 4 & minutes_remaining <= 3, 1,0))-> trainData
 
-# Aging Curve 
+training = trainData[1:16000,]
+testing = trainData[16001:nrow(trainData),]
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.polarAttackCrunch <- train(shot_made_flag~attack+polarDista+crunchTime,
+                            data = training,
+                            method = "glm",
+                            family = "binomial")
+stopCluster(cl)
+
+logReg.polarAttackCrunch$finalModel
+
+# Aging Curve
+trainData%>%
+  mutate(year = strsplit(as.character(season),"-"))%>%
+  mutate(year = as.numeric(year[[1]][1])) -> trainData
+
+# Favourite Spots to score 
+trainData%>%
+  mutate(dist_bin = round(polarDista/6),angle_bin = round(polarAngle/5))-> test
 
 # pick the most promising model
 
 # d Train a random forest model 
 
-# e 
+# e
+
+# The rationale behind this metric is to create a count of the misclassified observations. 
+# Where a misclassified observation gets the value 1 and and a right classification gets a 0.
+# Hence, high values indicate a low classification accuracy of the implemented model.
