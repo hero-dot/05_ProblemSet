@@ -2,50 +2,63 @@ require(magrittr)
 require(dplyr)
 require(ggplot2)
 require(class)
+require(doParallel)
+require(caret)
 trainDataAll <- read.csv("basketball_train.csv", sep = ";")
 
-trainData <- head(trainDataAll,16000)
-
 #a
-#
+trainDataAll%>%
+  select(playoffs, shot_made_flag, shot_type)-> ShotData
 
-trainData %>%
-  select(playoffs, shot_made_flag, shot_type)%>%
-  filter(.,playoffs == 0 ) %>%                 
-  filter(.,shot_type == "2PT Field Goal" ) -> Season2Point   
+ShotData%>%
+  filter(playoffs == 0 )%>%
+  filter(shot_type == "2PT Field Goal" )%>%
+  count(.)%>%
+  as.numeric(.[1,1]) -> Season2Point
 
-  Season2Point %>%
-   filter(.,shot_made_flag == 0 ) -> Season2PointNM
+ShotData%>%
+  filter(playoffs == 0 )%>%
+  filter(shot_type == "2PT Field Goal" )%>%
+  filter(shot_made_flag == 0 )%>%
+  count(.)%>%
+  as.numeric(.[1,1]) -> Season2PointNM
         
-(count(Season2PointNM)/count(Season2Point)) #52,46% Season 2-Points Not Made
+evalSeason2PointNM <- Season2PointNM/Season2Point 
+# 52,46% Season 2-Points Not Made
 
-  trainData %>%
-    select(playoffs, shot_made_flag, shot_type)%>%
-    filter(.,playoffs == 1 ) %>%                 
-    filter(.,shot_type == "2PT Field Goal" ) -> Playoff2Point   
+ShotData%>%
+  filter(playoffs == 1 )%>%
+  filter(shot_type == "2PT Field Goal" )%>%
+  count(.)%>%
+  as.numeric(.[1,1]) -> PlayOff2Point
+
+ShotData%>%
+  filter(playoffs == 1 )%>%
+  filter(shot_type == "2PT Field Goal" )%>%
+  filter(shot_made_flag == 0 )%>%
+  count(.)%>%
+  as.numeric(.[1,1]) -> PlayOff2PointNM
+
+evalPlayOff2PointNM <- PlayOff2PointNM/PlayOff2Point 
+# 47,54% Playoffs 2-Points Not Made
   
-  Season2Point %>%
-    filter(.,shot_made_flag == 0 ) -> Playoff2PointNM
-  
-  (count(Playoff2PointNM)/count(Playoff2Point)) #47,54% Playoffs 2-Points Not Made
-  
-trainData %>%
+trainDataAll %>%
   select(playoffs, shot_made_flag, shot_type)%>%
-  filter(.,playoffs == 0 ) %>%                  
-  filter(.,shot_type == "3PT Field Goal" ) -> Season3Point
+  filter(playoffs == 0 ) %>%                  
+  filter(shot_type == "3PT Field Goal" ) -> Season3Point
 
-  Season3Point %>%
-    filter(.,shot_made_flag == 0 ) -> Season3PointNM               
+Season3Point %>%
+  filter(.,shot_made_flag == 0 ) -> Season3PointNM               
                                               
-  (count(Season3PointNM)/count(Season3Point)) ->  #66,73% Season 3-Points Not Made
+(count(Season3PointNM)/count(Season3Point)) ->  #66,73% Season 3-Points Not Made
 
-  trainData %>%
+trainData %>%
     select(playoffs, shot_made_flag, shot_type)%>%
-    filter(.,playoffs == 1 )%>%                  
-    filter(.,shot_type == "3PT Field Goal" ) -> Season3Point
+    filter(playoffs == 1 )%>%                  
+    filter(shot_type == "3PT Field Goal" ) -> Season3Point
   
   Season3Point %>%
-    filter(.,shot_made_flag == 0 ) -> Season3PointNM               
+    filter(shot_made_flag == 0 ) -> Season3PointNM               
   
   (count(Season3PointNM)/count(Season3Point)) -> #69,57 Playoffs 3-Points Not Made
 
@@ -97,7 +110,6 @@ trainDataAll%>%
 # b kNN Classification 
 # base the classification on shot location and time remaining
 # use varying values of k
-
 trainDataAll%>%
   select(loc_y,loc_x,period,minutes_remaining,seconds_remaining,shot_made_flag)%>%
   mutate(bin_sec15 = round((seconds_remaining+8)/15),bin_sec30 = round((seconds_remaining+16)/30)) -> trainData
@@ -119,6 +131,7 @@ for (k in 1:40)
 {
   summary(knn(train_1,test_1,train_1$shot_made_flag, k))
 }
+# The centers and the cirkels of the kNN would resemble the playing field
 
 # Train the model with all variables
 
@@ -142,16 +155,95 @@ for (k in 1:50){
 
 ts.plot(data,xlab="k",ylab="# misclassifications")
 
-#Alternatively with bin_sec15
+# Alternatively with bin_sec15
 
-# c Logistic regression
-# Train and compare at least 5 different logistic regression model
+# c. Logistic regression
 
+# Basic logistic regression as a benchmark
+trainData = trainDataAll
+
+trainData$shot_made_flag = as.numeric(trainData$shot_made_flag)
+
+logReg = glm(shot_made_flag~loc_x,data = trainData,family = "binomial")
+plot(trainData$loc_x,trainData$shot_made_flag, col = "blue", pch="|")
+curve(predict(logReg, data.frame(loc_x=x), type="response"), add=TRUE) 
+
+# Convert factors to factors
+trainData$shot_made_flag = as.factor(trainData$shot_made_flag)
+trainData$loc_y = as.factor(trainData$loc_y)
+trainData$loc_x = as.factor(trainData$loc_x)
+trainData$minutes_remaining = as.factor(trainData$minutes_remaining)
+trainData$period = as.factor(trainData$period)
+trainData$playoffs = as.factor(trainData$playoffs)
+trainData$seconds_remaining = as.factor(trainData$seconds_remaining)
+
+# Splitting the data set 
+training = trainData[1:16000,]
+testing = trainData[16001:nrow(trainData),]
+
+logReg.basic = glm(shot_made_flag~loc_x,family="binomial",data=training)
+summary(logReg.basic)
+plot(trainData$loc_x,trainData$shot_made_flag, col = "blue", pch="|")
+curve(predict(logReg.basic, data.frame(loc_x=x), type="response"), add=TRUE) 
+
+
+logReg.basic <- train(shot_made_flag~minutes_remaining+period+playoffs+
+                        season+seconds_remaining+shot_type,
+                      data = training,
+                      method = "glm",
+                      family = "binomial")
+
+#Warnings arise from full rank matrix
+prediction = predict(logReg.basic,testMatrix)
+confusionMatrix(prediction,testing$shot_made_flag)
+
+trainData = trainDataAll
+# Logistic Regression from polar coordinates against the shot made flag
 # Coordinates converted to polar coordinates
+# Function to convert the cartesian coordinates in polar
+rad2deg <- function(rad) {(rad * 180) / (pi)}
+
+cartToPolar <- function(x,y)
+{
+  r = round(sqrt(x^2+y^2))
+  theta = round(rad2deg(atan(y/x)))
+  theta = ifelse(is.nan(theta),0,theta)
+  polarCoord = paste(as.character(theta),".",as.character(r))
+  polarCoord = as.factor(gsub(" ","",polarCoord))
+  return(polarCoord)
+}
+
+trainData%>%
+  mutate(polarCoord = cartToPolar(loc_x,loc_y))-> trainData
+
+training = trainData[1:16000,]
+testing = trainData[16001:nrow(trainData),]
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.polar <- train(shot_made_flag~polarCoord,
+                      data = training,
+                      method = "glm",
+                      family = "binomial")
+stopCluster(cl)
+
+logReg.polar = glm(shot_made_flag~polarCoord,data = training,family = "binomial")
+plot(trainData$period,trainData$shot_made_flag, col = "blue", pch="|")
+curve(predict(logReg, data.frame(period=x), type="response"), add=TRUE) 
+
+
+# Convert data to factors 
+
+# Create X Matrix
+
+# Set up Train Control
+
+
 # Attacking from the left or from the right of the basket
-# Crunch time (remaining Time < X)
+
+# Crunch time (remaining Time < X)last few minutes in the fourth quarter
+
 # Aging Curve 
-# One more Model
 
 # pick the most promising model
 
