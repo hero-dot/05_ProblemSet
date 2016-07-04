@@ -71,7 +71,6 @@ trainData %>%
 # Range on the x axis is 498, round to 500. Div by 5 makes 100 bins 
 
 # An Outlier has been removed, for better visualization 
-
 freq <- function(x)
 {
   total_shots <- length(x)
@@ -134,7 +133,6 @@ for (k in 1:40)
 # The centers and the cirkels of the kNN would resemble the playing field
 
 # Train the model with all variables
-
 data = NULL
 for (k in 1:45){
   data = c(data,sum(knn(select(train,-shot_made_flag),select(test,-shot_made_flag),train$shot_made_flag, k)!=test$shot_made_flag))
@@ -158,7 +156,6 @@ ts.plot(data,xlab="k",ylab="# misclassifications")
 # Alternatively with bin_sec15
 
 # c. Logistic regression
-
 # Basic logistic regression as a benchmark
 trainData = trainDataAll
 
@@ -225,6 +222,7 @@ polarAngl <- function(x,y)
   theta = ifelse(is.nan(theta),0,theta)
   return(theta)
 }
+
 trainData%>%
   mutate(polarDista = polarDist(loc_x,loc_y), polarAngle = polarAngl(loc_x,loc_y))-> trainData
 
@@ -267,9 +265,9 @@ logReg.polar$finalModel
 # Attacking from the left or from the right of the basket
 # What angles are on the left and what angles are on the right
 angles = NULL
-for (y in -2:2) 
+for (y in -1:1) 
 {
-  for (x in -2:2) 
+  for (x in -5:5) 
     {
     angle = round(rad2deg(atan2(y,x)))
     angle = cbind(y,x,angle)
@@ -311,22 +309,68 @@ logReg.polarAttackCrunch <- train(shot_made_flag~attack+polarDista+crunchTime,
                             family = "binomial")
 stopCluster(cl)
 
-logReg.polarAttackCrunch$finalModel
+summary(logReg.polarAttackCrunch$finalModel)
 
 # Aging Curve
 trainData%>%
   mutate(year = strsplit(as.character(season),"-"))%>%
-  mutate(year = as.numeric(year[[1]][1])) -> trainData
+  mutate(year = as.numeric(year[[1]][1]))%>%
+  mutate(yearSqr = year^2)-> trainData
+
+training = trainData[1:16000,]
+testing = trainData[16001:nrow(trainData),]
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.polarAttackCrunchAge <- train(shot_made_flag~year+yearSqr,
+                                  data = training,
+                                  method = "glm",
+                                  family = "binomial")
+stopCluster(cl)
+
+summary(logReg.polarAttackCrunchAge$finalModel)
+
 
 # Favourite Spots to score 
-trainData%>%
-  mutate(dist_bin = round(polarDista/6),angle_bin = round(polarAngle/5))-> test
 
+trainData%>%
+  mutate(distBin = round(polarDista/6),angleBin = round(polarAngle/5))-> trainData
+
+training = trainData[1:16000,]
+testing = trainData[16001:nrow(trainData),]
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.angle <- train(shot_made_flag~angleBin,
+                                data = training,
+                                method = "glm",
+                                family = "binomial")
+stopCluster(cl)
+
+summary(logReg.angle$finalModel)
 # pick the most promising model
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+logReg.mostProm <- train(shot_made_flag~attack+crunchTime+period+minutes_remaining,
+                      data = training,
+                      method = "glm",
+                      family = "binomial")
+stopCluster(cl)
+
+summary(logReg.mostProm$finalModel)
+
+predict(logReg.mostProm,testing,type="prob")
+getTrainPerf(logReg.mostProm)
+getTrainPerf(logReg.polarAttack)
+getTrainPerf(logReg.polarAttackCrunchAge)
+getTrainPerf(logReg.angle)
 
 # d Train a random forest model 
 
 # e
+
+# extended preprocessing on the variables
 
 # The rationale behind this metric is to create a count of the misclassified observations. 
 # Where a misclassified observation gets the value 1 and and a right classification gets a 0.
