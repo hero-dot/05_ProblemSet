@@ -30,6 +30,9 @@ trainIndex <- createDataPartition(creditDefaultData$default.payment.next.month, 
 training <- creditDefaultData[trainIndex,] #training data (83% of observations)
 testing  <- creditDefaultData[-trainIndex,] #test data (17% of observations)
 
+training <- creditDefaultData[1:25000,]
+testing <- creditDefaultData[25001:30000,]
+
 #Create X Matrix
 options(na.action='na.pass')
 trainMatrix <- model.matrix(default.payment.next.month ~ . - 1, data = training)
@@ -139,7 +142,7 @@ evalResults %>%
   mutate(count=1:n()) %>%
   mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
   mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
-         count = count / 5099)-> LiftLog
+         count = count / n())-> LiftLog
 AUCLog = trapz(LiftLog$count,LiftLog$cumulativePercentage)
 
 evalResults %>%
@@ -147,7 +150,7 @@ evalResults %>%
   mutate(count=1:n()) %>%
   mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
   mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
-         count = count / 5099)-> Liftctree
+         count = count / n())-> Liftctree
 AUCctree = trapz(Liftctree$count,Liftctree$cumulativePercentage)
 
 evalResults %>%
@@ -155,7 +158,7 @@ evalResults %>%
   mutate(count=1:n()) %>%
   mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
   mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
-         count = count / 5099)-> Liftknn
+         count = count / n())-> Liftknn
 AUCknn = trapz(Liftknn$count,Liftknn$cumulativePercentage)
 
 evalResults %>%
@@ -163,12 +166,12 @@ evalResults %>%
   mutate(count=1:n()) %>%
   mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
   mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
-         count = count / 5099)-> Liftrf
+         count = count / n())-> Liftrf
 AUCrf = trapz(Liftrf$count,Liftrf$cumulativePercentage)
 
 # Area below Baseline = 0.5 
 # Area below Best possible Curve
-AUCbest <- ((sum(Liftctree$Class=="1")/5099)^2)/0.5+((5099-sum(Liftctree$Class=="1"))/5099)
+AUCbest <- ((sum(Liftctree$Class=="1")/5000)^2)/0.5+((5000-sum(Liftctree$Class=="1"))/5000)
 
 AreRaLog <- (AUCLog-0.5)/(AUCbest-0.5)
 AreRaCtree <- (AUCctree-0.5)/(AUCbest-0.5)
@@ -179,11 +182,53 @@ AreaRatio <- c(AreRaLog,AreRaCtree,AreRaKnn,AreRaRf)
 
 AllMetrics = data.frame(row.names = ModName,ErrRaTr,ErrRaVal,AreaRatio)
 
-# b. 
-
-# Explain the Sorting Smoothing Method
+# b.
 
 # Develop the graphs and apply to your classifiers
+# Sorting smoothing for LogReg
+evalResults %>%
+  select(Class,logreg)%>%
+  arrange(logreg)%>%
+  mutate(block=rep(1:(n()/50),each=50)) %>%
+  mutate(Class = ifelse(Class=="1",1,0))%>%
+  group_by(block) %>%
+  mutate(avg = sum(Class)/50) -> smoothLogReg
+
+plot(smoothLogReg$avg,smoothLogReg$logreg)
+abline(lm(logreg~avg,data=smoothLogReg),add=T)
+
+evalResults %>%
+  select(Class,ctree)%>%
+  arrange(ctree)%>%
+  mutate(block=rep(1:(n()/50),each=50)) %>%
+  mutate(Class = ifelse(Class=="1",1,0))%>%
+  group_by(block) %>%
+  mutate(avg = sum(Class)/50) -> smoothCtree
+
+plot(smoothCtree$avg,smoothCtree$ctree)
+abline(lm(ctree~avg,data=smoothCtree),add=T)
+
+evalResults %>%
+  select(Class,knn )%>%
+  arrange(knn)%>%
+  mutate(block=rep(1:(n()/50),each=50)) %>%
+  mutate(Class = ifelse(Class=="1",1,0))%>%
+  group_by(block) %>%
+  mutate(avg = sum(Class)/50) -> smoothKnn
+
+plot(smoothKnn$avg,smoothKnn$logreg)
+abline(lm(logreg~avg,data=smoothRf),add=T)
+
+evalResults %>%
+  select(Class,rf)%>%
+  arrange(rf)%>%
+  mutate(block=rep(1:(n()/50),each=50)) %>%
+  mutate(Class = ifelse(Class=="1",1,0))%>%
+  group_by(block) %>%
+  mutate(avg = sum(Class)/50) -> smoothRf
+
+plot(smoothRf$avg,smoothRf$logreg)
+abline(lm(logreg~avg,data=smoothRf),add=T)
 
 # How would you assess the performance of your random forest 
 # vis a vis the methods in the paper

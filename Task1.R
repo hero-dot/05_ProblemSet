@@ -367,7 +367,7 @@ getTrainPerf(logReg.polarAttackCrunchAge)
 getTrainPerf(logReg.angle)
 
 # d Train a random forest model 
-#Create X Matrix
+# Create X Matrix
 options(na.action='na.pass')
 trainingMatrix <- model.matrix(shot_made_flag ~ . - 1, data = training)
 testMatrix <- model.matrix(shot_made_flag ~ . - 1, data = testing)
@@ -393,8 +393,8 @@ stopCluster(cl)
 prediction = predict(caret.rf,testMatrix)
 confusionMatrix(prediction,testing$Survived)
 plot(caret.rf)
-# e
 
+# e
 # extended preprocessing on the variables
 
 # The rationale behind this metric is to create a count of the misclassified observations. 
