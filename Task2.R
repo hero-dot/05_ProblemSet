@@ -4,6 +4,9 @@ library(doParallel)
 # install.packages("doParallel")
 library(e1071)
 # install.packages("e1071")
+require(dplyr)
+require(pracma)
+#install.packages("pracma")
 
 # Import the Data 
 creditDefaultData = read.csv("default of credit card clients.csv",sep = ";")
@@ -50,12 +53,9 @@ caret.kNN <-  train(trainMatrix,
                     trControl = tc)
 stopCluster(cl)
 
-caret.kNN$finalModel
-caret.kNN$results
-summary(caret.kNN)
-ggplot(caret.kNN)
-prediction = predict(caret.kNN,testMatrix)
-confusionMatrix(prediction,testing$default.payment.next.month)
+# Save the model for later usage
+save(caret.kNN,file = "caretkNN.rda")
+load("caretkNN.rda")
 
 # Train a logisitic regression
 cl <- makeCluster(detectCores())
@@ -70,9 +70,8 @@ caret.logReg <- train(trainMatrix,
                       trControl = tc)
 stopCluster(cl)
 
-prediction = predict(caret.logReg,testMatrix)
-confusionMatrix(prediction,testing$default.payment.next.month)
-plot(caret.logReg$finalModel)
+save(caret.logReg,file = "caretLogReg.rda")
+load("caretLogReg.rda")
 
 # Train a decision tree
 cl <- makeCluster(detectCores())
@@ -86,15 +85,13 @@ caret.ctree <- train(trainMatrix,
                      trControl = tc)
 stopCluster(cl)
 
-plot(caret.ctree$finalModel)
-prediction = predict(caret.ctree,testMatrix)
-confusionMatrix(prediction,testing$default.payment.next.month)
-plot(caret.ctree)
+save(caret.ctree,file = "caretCtree.rda")
+load("caretCtree.rda")
 
 # Train a random forest
 cl <- makeCluster(detectCores())
 registerDoParallel(cl)
-caret.rf <- train(trainingMatrix,
+caret.rf <- train(trainMatrix,
                   training$default.payment.next.month,
                   preProcess=c("knnImpute"),
                   method = "rf",
@@ -103,14 +100,11 @@ caret.rf <- train(trainingMatrix,
                   trControl = tc)
 stopCluster(cl)
 
-prediction = predict(caret.rf,testMatrix)
-confusionMatrix(prediction,testing$Survived)
-plot(caret.rf)
+save(caret.rf,file = "caretRf.rda")
+load("caretRf.rda")
 
 # Provide a table akin to table 1
-# caret.knn and caret.rf is missing
-
-models = list(caret.logReg,caret.ctree)
+models = list(caret.logReg,caret.ctree,caret.kNN,caret.rf)
 
 ModName = NULL
 ErrRaTr = NULL
@@ -128,39 +122,62 @@ for (mod in models)
   ErrRaVal = rbind(ErrRaVal,ErrorVal)
 }
 
-AllMetrics = data.frame(ModName,ErrRaTr,ErrRaVal)
+# Free up the memory
+mod = NULL
+models = NULL
+
 # Area Ratio
-
-# Area below Baseline = 0.5 
-
-# Area below Best possible Curve
-# 0.5*positives+(total-positives)*positives 
-
-# AUC 
+# AUC for the Lift
 evalResults <- data.frame(Class = testing$default.payment.next.month)
 evalResults$logreg <-predict(caret.logReg, testMatrix, type = "prob")[,"1"]
 evalResults$ctree <- predict(caret.ctree, testMatrix, type = "prob")[,"1"]
-
 evalResults$rf <- predict(caret.rf, testMatrix, type = "prob")[,"1"]
-evalResults$gbm <- predict(caret.kNN, testMatrix, type = "prob")[,"1"]
-
-liftData <- lift(Class ~ logreg + ctree, data = evalResults)
-
-require(dplyr)
-
-evalResults <- data.frame(Class = testing$y)
-evalResults$lr <- lrpredict_prob[,"yes"]
+evalResults$knn <- predict(caret.kNN, testMatrix, type = "prob")[,"1"]
 
 evalResults %>%
   arrange(-logreg) %>%
   mutate(count=1:n()) %>%
   mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
-  mutate(cumulativePercentage = cumulativeHits/153,
-         count = count / 1400)-> x
-plot(x$count,x$cumulativePercentage,type="l",col="red",lwd=2)
-abline(a=0,b=1,lwd=2,lty=2,col="gray")
+  mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
+         count = count / 5099)-> LiftLog
+AUCLog = trapz(LiftLog$count,LiftLog$cumulativePercentage)
 
+evalResults %>%
+  arrange(-ctree) %>%
+  mutate(count=1:n()) %>%
+  mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
+  mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
+         count = count / 5099)-> Liftctree
+AUCctree = trapz(Liftctree$count,Liftctree$cumulativePercentage)
 
+evalResults %>%
+  arrange(-knn) %>%
+  mutate(count=1:n()) %>%
+  mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
+  mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
+         count = count / 5099)-> Liftknn
+AUCknn = trapz(Liftknn$count,Liftknn$cumulativePercentage)
+
+evalResults %>%
+  arrange(-rf) %>%
+  mutate(count=1:n()) %>%
+  mutate(cumulativeHits = cumsum(.$Class=="1")) %>%
+  mutate(cumulativePercentage = cumulativeHits/max(cumulativeHits),
+         count = count / 5099)-> Liftrf
+AUCrf = trapz(Liftrf$count,Liftrf$cumulativePercentage)
+
+# Area below Baseline = 0.5 
+# Area below Best possible Curve
+AUCbest <- ((sum(Liftctree$Class=="1")/5099)^2)/0.5+((5099-sum(Liftctree$Class=="1"))/5099)
+
+AreRaLog <- (AUCLog-0.5)/(AUCbest-0.5)
+AreRaCtree <- (AUCctree-0.5)/(AUCbest-0.5)
+AreRaKnn <- (AUCknn-0.5)/(AUCbest-0.5)
+AreRaRf <- (AUCrf-0.5)/(AUCbest-0.5)
+
+AreaRatio <- c(AreRaLog,AreRaCtree,AreRaKnn,AreRaRf)
+
+AllMetrics = data.frame(row.names = ModName,ErrRaTr,ErrRaVal,AreaRatio)
 
 # b. 
 
@@ -168,5 +185,5 @@ abline(a=0,b=1,lwd=2,lty=2,col="gray")
 
 # Develop the graphs and apply to your classifiers
 
-# How would you assess the performance of you random forest 
+# How would you assess the performance of your random forest 
 # vis a vis the methods in the paper

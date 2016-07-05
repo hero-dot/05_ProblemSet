@@ -332,6 +332,7 @@ summary(logReg.polarAttackCrunchAge$finalModel)
 
 
 # Favourite Spots to score 
+# It might be argumented, that it is essentially binning of a variable and should therefore be avoided. 
 
 trainData%>%
   mutate(distBin = round(polarDista/6),angleBin = round(polarAngle/5))-> trainData
@@ -360,14 +361,38 @@ stopCluster(cl)
 
 summary(logReg.mostProm$finalModel)
 
-predict(logReg.mostProm,testing,type="prob")
 getTrainPerf(logReg.mostProm)
 getTrainPerf(logReg.polarAttack)
 getTrainPerf(logReg.polarAttackCrunchAge)
 getTrainPerf(logReg.angle)
 
 # d Train a random forest model 
+#Create X Matrix
+options(na.action='na.pass')
+trainingMatrix <- model.matrix(shot_made_flag ~ . - 1, data = training)
+testMatrix <- model.matrix(shot_made_flag ~ . - 1, data = testing)
 
+tc <- trainControl(
+  method = "repeatedcv",
+  number = 3,
+  repeats = 3)
+
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
+
+caret.rf <- train(trainingMatrix,
+                  training$shot_made_flag,
+                  preProcess=c("knnImpute"),
+                  method = "rf",
+                  metric = "Accuracy",
+                  tuneLength = 10,
+                  trControl = tc)
+stopCluster(cl)
+
+
+prediction = predict(caret.rf,testMatrix)
+confusionMatrix(prediction,testing$Survived)
+plot(caret.rf)
 # e
 
 # extended preprocessing on the variables
